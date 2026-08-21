@@ -60,7 +60,29 @@
 
   .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
   .card-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-  .card-actions { display: flex; gap: 0.75rem; }
+  .card-actions { display: flex; align-items: center; gap: 0.75rem; }
+
+  .mode-switch { display: flex; border-radius: 0.75rem; overflow: hidden; margin-bottom: 1rem; border: 1px solid #232a55; }
+  .mode-switch-btn {
+    flex: 1;
+    padding: 0.5rem 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: #0c0d1e;
+    color: #4a5178;
+    border: none;
+    cursor: pointer;
+  }
+  .mode-switch-btn-active { background: #1c2454; color: #8fb4ff; }
+
+  .multi-btn {
+    border-radius: 999px;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+  }
 
   .link-btn { font-size: 0.75rem; background: none; border: none; cursor: pointer; padding: 0; }
   .link-muted { color: #4a5178; }
@@ -417,13 +439,26 @@ const COLORS = [{
   label: "B",
   hex: "#F2F2F2"
 }];
+const RAINBOW_GRADIENT = "linear-gradient(135deg, #E5484D, #F5C518, #3FB950, #3B82F6, #A855F7)";
 const NUMBERS = [1, 2, 3, 4, 5];
-const STORAGE_KEY = "hanabi-hand-v4";
-const DOUBLE_TAP_MS = 500;
+const MODES = [{
+  key: "off",
+  label: "Bez rozšíření"
+}, {
+  key: "extra",
+  label: "Navíc barva"
+}, {
+  key: "multi",
+  label: "Multicolor"
+}];
+const STORAGE_KEY = "hanabi-hand-v5";
+const MODE_STORAGE_KEY = "hanabi-mode-v1";
 function freshCard(id) {
   return {
     id,
     color: Object.fromEntries(COLORS.map(c => [c.key, "off"])),
+    rainbowColor: "off",
+    multi: "neutral",
     number: Object.fromEntries(NUMBERS.map(n => [n, "off"]))
   };
 }
@@ -455,27 +490,12 @@ function optionStyle(status, hex, textOnColor) {
   };
 }
 function OptionButton({
-  status,
-  onTap,
-  onHold,
+  onClick,
   style,
   children
 }) {
-  const clickTimerRef = useRef(null);
-  function handleClick() {
-    if (clickTimerRef.current) {
-      clearTimeout(clickTimerRef.current);
-      clickTimerRef.current = null;
-      onHold();
-    } else {
-      onTap();
-      clickTimerRef.current = setTimeout(() => {
-        clickTimerRef.current = null;
-      }, DOUBLE_TAP_MS);
-    }
-  }
   return /*#__PURE__*/React.createElement("button", {
-    onClick: handleClick,
+    onClick: onClick,
     className: "opt-btn",
     style: {
       ...style,
@@ -487,6 +507,7 @@ function OptionButton({
 }
 function HanabiNotebook() {
   const [cards, setCards] = useState([1, 2, 3, 4, 5].map(freshCard));
+  const [mode, setMode] = useState("off");
   const [loaded, setLoaded] = useState(false);
   const nextId = useRef(6);
   useEffect(() => {
@@ -499,6 +520,10 @@ function HanabiNotebook() {
           nextId.current = Math.max(...parsed.map(c => c.id)) + 1;
         }
       }
+      const savedMode = localStorage.getItem(MODE_STORAGE_KEY);
+      if (savedMode && MODES.some(m => m.key === savedMode)) {
+        setMode(savedMode);
+      }
     } catch (e) {}
     setLoaded(true);
   }, []);
@@ -508,40 +533,40 @@ function HanabiNotebook() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(cards));
     } catch (e) {}
   }, [cards, loaded]);
-  function tapColor(cardId, key) {
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      localStorage.setItem(MODE_STORAGE_KEY, mode);
+    } catch (e) {}
+  }, [mode, loaded]);
+  function cycleColor(cardId, key) {
     setCards(cs => cs.map(c => c.id === cardId ? {
       ...c,
       color: {
         ...c.color,
-        [key]: c.color[key] === "on" ? "off" : "on"
+        [key]: c.color[key] === "off" ? "on" : c.color[key] === "on" ? "excluded" : "off"
       }
     } : c));
   }
-  function holdColor(cardId, key) {
+  function cycleRainbowColor(cardId) {
     setCards(cs => cs.map(c => c.id === cardId ? {
       ...c,
-      color: {
-        ...c.color,
-        [key]: c.color[key] === "excluded" ? "off" : "excluded"
-      }
+      rainbowColor: c.rainbowColor === "off" ? "on" : c.rainbowColor === "on" ? "excluded" : "off"
     } : c));
   }
-  function tapNumber(cardId, n) {
+  function cycleNumber(cardId, n) {
     setCards(cs => cs.map(c => c.id === cardId ? {
       ...c,
       number: {
         ...c.number,
-        [n]: c.number[n] === "on" ? "off" : "on"
+        [n]: c.number[n] === "off" ? "on" : c.number[n] === "on" ? "excluded" : "off"
       }
     } : c));
   }
-  function holdNumber(cardId, n) {
+  function cycleMulti(cardId) {
     setCards(cs => cs.map(c => c.id === cardId ? {
       ...c,
-      number: {
-        ...c.number,
-        [n]: c.number[n] === "excluded" ? "off" : "excluded"
-      }
+      multi: c.multi === "neutral" ? "on" : c.multi === "on" ? "excluded" : "neutral"
     } : c));
   }
   function resetCard(cardId) {
@@ -556,6 +581,7 @@ function HanabiNotebook() {
   function clearAll() {
     setCards([]);
   }
+  const colorCols = mode === "extra" ? 6 : 5;
   return /*#__PURE__*/React.createElement("div", {
     className: "app-shell"
   }, /*#__PURE__*/React.createElement("div", {
@@ -565,6 +591,12 @@ function HanabiNotebook() {
     alt: "Hanabi",
     className: "logo"
   }), /*#__PURE__*/React.createElement("div", {
+    className: "mode-switch"
+  }, MODES.map(m => /*#__PURE__*/React.createElement("button", {
+    key: m.key,
+    onClick: () => setMode(m.key),
+    className: "mode-switch-btn" + (mode === m.key ? " mode-switch-btn-active" : "")
+  }, m.label))), /*#__PURE__*/React.createElement("div", {
     className: "toolbar"
   }, /*#__PURE__*/React.createElement("button", {
     onClick: addCard,
@@ -577,48 +609,90 @@ function HanabiNotebook() {
   }, cards.length === 0 && /*#__PURE__*/React.createElement("div", {
     className: "empty-state"
   }, "Ruka je prázdná. Přidej kartu tlačítkem výše."), cards.map((card, index) => {
-    const resolved = countStatus(card.color, "on") === 1 && countStatus(card.number, "on") === 1;
-    const resolvedColorKey = resolved ? Object.keys(card.color).find(k => card.color[k] === "on") : null;
+    const normalResolved = countStatus(card.color, "on") === 1;
+    const numberResolved = countStatus(card.number, "on") === 1;
+    const resolvedColorKey = normalResolved ? Object.keys(card.color).find(k => card.color[k] === "on") : null;
     const resolvedColor = resolvedColorKey ? COLORS.find(c => c.key === resolvedColorKey) : null;
-    const resolvedNumber = resolved ? Object.keys(card.number).find(k => card.number[k] === "on") : null;
+    const resolvedNumber = numberResolved ? Object.keys(card.number).find(k => card.number[k] === "on") : null;
+    const isMultiResolved = mode === "multi" && card.multi === "on" && numberResolved;
+    const isExtraResolved = mode === "extra" && card.rainbowColor === "on" && numberResolved;
+    const isNormalResolved = normalResolved && numberResolved && !isMultiResolved;
+    const resolved = isMultiResolved || isExtraResolved || isNormalResolved;
+    const isRainbowResolved = isMultiResolved || isExtraResolved;
+    const borderColor = isRainbowResolved ? "#A855F7" : resolvedColor ? resolvedColor.hex : null;
+    const glowColor = isRainbowResolved ? "rgba(168,85,247,0.5)" : resolvedColor ? `${resolvedColor.hex}30` : null;
+    const cardBg = isRainbowResolved ? `linear-gradient(135deg, rgba(168,85,247,0.12), #0c0d1e)` : resolvedColor ? `linear-gradient(135deg, ${resolvedColor.hex}1a, #0c0d1e)` : "#0c0d1e";
+    const titleText = isMultiResolved ? `Karta ${index + 1} — D ${resolvedNumber}` : isExtraResolved ? `Karta ${index + 1} — D ${resolvedNumber}` : isNormalResolved ? `Karta ${index + 1} — ${resolvedColor.label} ${resolvedNumber}` : `Karta ${index + 1}`;
     return /*#__PURE__*/React.createElement("div", {
       key: card.id,
       className: "card",
       style: {
-        background: resolved ? `linear-gradient(135deg, ${resolvedColor.hex}1a, #0c0d1e)` : "#0c0d1e",
-        border: resolved ? `1.5px solid ${resolvedColor.hex}` : "1px solid #1a1c3a",
-        boxShadow: resolved ? `0 0 24px ${resolvedColor.hex}30` : "none"
+        background: resolved ? cardBg : "#0c0d1e",
+        border: resolved ? `1.5px solid ${borderColor}` : "1px solid #1a1c3a",
+        boxShadow: resolved ? `0 0 24px ${glowColor}` : "none"
       }
     }, /*#__PURE__*/React.createElement("div", {
       className: "card-head"
     }, /*#__PURE__*/React.createElement("span", {
       className: "card-title",
       style: {
-        color: resolved ? resolvedColor.hex : "#3a3f66"
+        color: isRainbowResolved ? "#A855F7" : resolvedColor && isNormalResolved ? resolvedColor.hex : "#3a3f66"
       }
-    }, resolved ? `Karta ${index + 1} — ${resolvedColor.label} ${resolvedNumber}` : `Karta ${index + 1}`), /*#__PURE__*/React.createElement("div", {
+    }, titleText), /*#__PURE__*/React.createElement("div", {
       className: "card-actions"
-    }, /*#__PURE__*/React.createElement("button", {
+    }, mode === "multi" && /*#__PURE__*/React.createElement("button", {
+      onClick: () => cycleMulti(card.id),
+      className: "multi-btn",
+      style: card.multi === "on" ? {
+        background: RAINBOW_GRADIENT,
+        color: "#0d1024",
+        border: "none"
+      } : card.multi === "excluded" ? {
+        background: "#1a0d10",
+        color: "#7a3540",
+        border: "1px dashed #4a1620",
+        textDecoration: "line-through"
+      } : {
+        background: "#08091a",
+        color: "#2a2d52",
+        border: "1px solid #16182f"
+      }
+    }, "Duhová"), /*#__PURE__*/React.createElement("button", {
       onClick: () => resetCard(card.id),
       className: "link-btn link-muted"
     }, "reset"), /*#__PURE__*/React.createElement("button", {
       onClick: () => removeCard(card.id),
       className: "link-btn link-danger"
     }, "odebrat"))), /*#__PURE__*/React.createElement("div", {
-      className: "opt-grid mb-2"
+      className: "opt-grid mb-2",
+      style: {
+        gridTemplateColumns: `repeat(${colorCols}, minmax(0,1fr))`
+      }
     }, COLORS.map(c => /*#__PURE__*/React.createElement(OptionButton, {
       key: c.key,
-      status: card.color[c.key],
-      onTap: () => tapColor(card.id, c.key),
-      onHold: () => holdColor(card.id, c.key),
+      onClick: () => cycleColor(card.id, c.key),
       style: optionStyle(card.color[c.key], c.hex, c.key === "white" || c.key === "yellow" ? "#0d1024" : "#fff")
-    }, c.label))), /*#__PURE__*/React.createElement("div", {
+    }, c.label)), mode === "extra" && /*#__PURE__*/React.createElement(OptionButton, {
+      onClick: () => cycleRainbowColor(card.id),
+      style: card.rainbowColor === "on" ? {
+        background: RAINBOW_GRADIENT,
+        color: "#0d1024",
+        border: "none"
+      } : card.rainbowColor === "excluded" ? {
+        background: "#1a0d10",
+        color: "#7a3540",
+        border: "1px dashed #4a1620",
+        textDecoration: "line-through"
+      } : {
+        background: "#08091a",
+        color: "#2a2d52",
+        border: "1px solid #16182f"
+      }
+    }, "D")), /*#__PURE__*/React.createElement("div", {
       className: "opt-grid"
     }, NUMBERS.map(n => /*#__PURE__*/React.createElement(OptionButton, {
       key: n,
-      status: card.number[n],
-      onTap: () => tapNumber(card.id, n),
-      onHold: () => holdNumber(card.id, n),
+      onClick: () => cycleNumber(card.id, n),
       style: optionStyle(card.number[n], "#3B82F6", "#fff")
     }, n))));
   }))));
